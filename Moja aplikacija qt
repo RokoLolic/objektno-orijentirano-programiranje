@@ -1,0 +1,284 @@
+#include <QApplication>
+#include <QLabel>
+#include <QMainWindow>
+#include <QMouseEvent>
+#include <QMessageBox>
+#include <QVBoxLayout>
+#include <QFormLayout>
+#include <QDialogButtonBox>
+#include <QLineEdit>
+#include <QAction>
+#include <QMenu>
+#include <QMenuBar>
+#include <QString>
+#include <QPalette>
+#include <QSize>
+#include <QPainter>
+#include <QVector>
+#include <QKeyEvent>
+#include <QStatusBar>
+#include <QFileDialog>
+#include <QTextStream>
+#include <QFile>
+
+using namespace std;
+
+class MyMainWindow : public QMainWindow{
+public:
+    MyMainWindow();
+    QLabel *upute, *kodboje;
+    QString naziv;
+    QMenu* EditMenu;
+    QAction* EditNoviTekst;
+    QPalette Boja;
+    QSize velicina;
+    QColor* imeboje;
+    QPainter* crta;
+    QVector<QLineF> veccrta;
+    ~MyMainWindow();
+    QVector<QLineF>::iterator iter;
+    QLineF linetemp;
+    QStatusBar* status;
+    QRect kvadrat;
+    int X[2], Y[2], click=0; //brojac lijevih klikova;
+    int lin[2][2];
+
+    void FileSaveAsMenu();
+    void FileOpenMenu();
+    QMenu* FileMenu ;
+    QAction* FileSaveAs ;
+    QAction* FileOpen ;
+
+    int R=255, G=255, B=255, A=255;
+    //void novacrta(int[], int[]);
+    virtual void paintEvent(QPaintEvent*) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void EditNoviTekstMenu();
+};
+
+void MyMainWindow::keyPressEvent(QKeyEvent *event){
+    switch (event->key()) {
+    case (Qt::Key_Left):
+        if(veccrta.size()!=0){
+            veccrta.pop_back();
+        }
+        linetemp.setLength(0);
+        update();
+        break;
+    case (Qt::Key_Down):
+        veccrta.clear();
+        linetemp.setLength(0);
+        update();
+        break;
+    }
+}
+
+void MyMainWindow::paintEvent(QPaintEvent*){
+    imeboje->setRed(R);
+    imeboje->setBlue(B);
+    imeboje->setGreen(G);
+    imeboje->setAlpha(A);
+
+    velicina=this->size();
+    QPainter pozadina(this);
+    pozadina.setBrush(*imeboje);
+    pozadina.setPen(*imeboje);
+    kvadrat.setRect(0, 0, velicina.width(), velicina.height());
+    pozadina.drawRect(kvadrat);
+
+    crta = new QPainter;
+    crta->begin(this);
+    crta->drawLine(linetemp);
+    for(iter=veccrta.begin(); iter!=veccrta.end(); (iter)++){
+        crta->drawLine(*iter);
+    }
+    crta->end();
+
+}
+
+MyMainWindow::~MyMainWindow(){
+    delete crta;
+    delete imeboje;
+    delete EditNoviTekst;
+    delete upute;
+}
+
+MyMainWindow::MyMainWindow(){
+    //qApp->processEvents();
+
+    upute = new QLabel(this);
+    upute->setText("Lijevo undo\nDolje brisanje");
+    upute->move(10, 30);
+
+    imeboje = new QColor;
+    kodboje = new QLabel(this);
+    kodboje->setText("255 255 255");
+
+    status=new QStatusBar;
+    status=this->statusBar();
+    status->addPermanentWidget(kodboje);
+
+
+    EditNoviTekst=new QAction(tr("Novo..."), this);
+    EditNoviTekst->setShortcut(tr("SHIFT+D"));
+    connect(EditNoviTekst, &QAction::triggered, this, &MyMainWindow::EditNoviTekstMenu);
+    EditMenu=menuBar()->addMenu(tr("Edit"));
+    EditMenu->addAction(EditNoviTekst);
+
+    FileSaveAs = new QAction(tr("&Save As..."), this);
+    FileSaveAs->setShortcut(tr("CTRL+ S"));
+    connect(FileSaveAs, &QAction::triggered, this, &MyMainWindow::FileSaveAsMenu );
+
+    FileOpen = new QAction(tr("&Open..."), this);
+    FileOpen->setShortcut(tr("CTRL+ O"));
+    connect(FileOpen, &QAction::triggered, this, &MyMainWindow::FileOpenMenu);
+    FileMenu = menuBar()->addMenu(tr("&File"));
+    FileMenu->addAction(FileSaveAs);
+    FileMenu->addAction(FileOpen);
+
+    //update();
+}
+
+void MyMainWindow::FileSaveAsMenu(){
+    QString filename = QFileDialog::getSaveFileName(this, "Save as...", "", "FESB File (*fsb)");
+    if(!filename.isEmpty()){
+        QFile file(filename);
+        if (!file.open(QIODevice::WriteOnly)){
+            QMessageBox::information(this, "Unable to Open File", file.errorString());
+            return;
+        }
+        QTextStream out(&file);
+        out << "fesb file" << Qt::endl;
+        out << R << " " << G << " " << B << Qt::endl;
+        out << size().width()  << Qt::endl;
+        out << size().height()  << Qt::endl;
+        for(iter=veccrta.begin(); iter!=veccrta.end(); iter++){
+            out << iter->x1() <<" "<< iter->y1()<<" " << iter->x2()<<" " << iter->y2()  << Qt::endl;
+        }
+    }
+}
+void MyMainWindow::FileOpenMenu(){
+    QString filename = QFileDialog::getOpenFileName(this, "Open Geometry...", "", "FESB File (*.fsb");
+    if(!filename.isEmpty()){
+        QFile file(filename);
+        if(!file.open(QIODevice::ReadOnly)){
+            QMessageBox::information(this, "Unable to Open File", file.errorString());
+            return;
+        }
+        QTextStream in(&file);
+        QString str;
+        str = in.readLine();
+        if(str=="fesb file"){
+            int r1, g1, b1;
+            in >> r1 >> g1 >> b1;
+            imeboje->setRed(r1);
+            imeboje->setBlue(b1);
+            imeboje->setGreen(g1);
+            int sirok, visok;
+            in >> sirok;
+            in >> visok;
+            kvadrat.setRect(0, 0, sirok, visok);
+            int x1, y1, x2, y2;
+            QLine temp;
+            while(!file.atEnd()){
+                in >> x1 >> y1 >> x2 >> y2;
+                temp.setLine(x1, y1, x2, y2);
+                veccrta.push_back(temp);
+            }
+            update();
+        }
+    }
+}
+class MyDialog: public QDialog {
+    public:
+    MyDialog();
+    QFormLayout* drugired;
+    QVBoxLayout* mainLayout ;
+    QWidget* editWidget ;
+    QFormLayout* editLayout ;
+    QLineEdit *crvena, *zelena, *plava ;
+    QDialogButtonBox* buttonBox ;
+};
+
+MyDialog::MyDialog(){
+    crvena=new QLineEdit ;
+    zelena=new QLineEdit ;
+    plava=new QLineEdit ;
+    editLayout=new QFormLayout ;
+    editLayout->addRow(new QLabel(tr("Crvena:")), crvena);
+    editLayout->addRow(new QLabel(tr("Zelena:")), zelena);
+    editLayout->addRow(new QLabel(tr("Plava:")), plava);
+    //editLayout->addRow(new QLabel(tr("Cijeli Kod:")), cijelikod);
+    editWidget=new QWidget ;
+    editWidget->setLayout(editLayout);
+
+    buttonBox=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
+    connect(buttonBox,SIGNAL(accepted()),this,SLOT(accept()));
+    connect(buttonBox,SIGNAL(rejected()),this,SLOT(reject()));
+    mainLayout=new QVBoxLayout;
+    mainLayout->addWidget(editWidget);
+    mainLayout->addWidget(buttonBox);
+
+    setLayout(mainLayout);
+    setWindowTitle("Promjena teksta");
+
+}
+
+void MyMainWindow::mouseMoveEvent(QMouseEvent *event){
+    if(click==1){
+        this->setMouseTracking(1);
+        X[1]=event->x();
+        Y[1]=event->y();
+        linetemp.setLine(X[0], Y[0], X[1], Y[1]);
+        update();
+    }
+}
+
+void MyMainWindow::mousePressEvent(QMouseEvent* event){
+    if(event->button()==Qt::LeftButton){
+        upute->hide();
+        if(click==0){
+            X[0]=event->x();
+            Y[0]=event->y();
+        }
+        click++;
+        if(click>=2){
+            QLineF line(X[0], Y[0], X[1], Y[1]);
+            veccrta.push_back(line);
+            click=0;
+            update();
+
+        }
+    }
+}
+
+void MyMainWindow::EditNoviTekstMenu(){
+    MyDialog dialog;
+    int ret = dialog.exec();
+    if( ret==QDialog::Accepted){
+
+        if((dialog.crvena->text()).length()!=0){
+            R=(dialog.crvena->text()).toInt();
+        }
+        if((dialog.zelena->text()).length()!=0){
+            G=(dialog.zelena->text()).toInt();
+        }
+        if((dialog.plava->text()).length()!=0){
+            B=(dialog.plava->text()).toInt();
+        }
+        kodboje->setText((QVariant(R).toString())+" "+(QVariant(G).toString())+" "+(QVariant(B).toString()));
+
+    }
+}
+
+int main(int argc, char **argv){
+    QApplication app (argc, argv);
+
+    MyMainWindow mainWindow;
+    mainWindow.resize(300,150);
+
+    mainWindow.show();
+    return app.exec();
+}
